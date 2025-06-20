@@ -1,0 +1,200 @@
+%% Define the points of the curve
+x=xp;
+y=yp;
+
+% Number of points
+n = length(x);
+
+% Initialize the arclength array
+s = zeros(1, n);
+
+%% Compute the incremental distances and the cumulative sum
+for i = 2:n
+    ds = sqrt((x(i) - x(i-1))^2 + (y(i) - y(i-1))^2);
+    s(i) = s(i-1) + ds;
+end
+
+s= s/max(s);
+
+[s, unique_indices] = unique(s, 'stable');
+x = x(unique_indices);
+y = y(unique_indices);
+
+n = length(x);
+
+%% Compute derivatives with respect to s
+dx_ds = gradient(x, s);
+dy_ds = gradient(y, s);
+
+% Compute second derivatives with respect to s
+d2x_ds2 = gradient(dx_ds, s);
+d2y_ds2 = gradient(dy_ds, s);
+
+% Compute third derivatives with respect to s
+d3x_ds3 = gradient(d2x_ds2, s);
+d3y_ds3 = gradient(d2y_ds2, s);
+
+curvature = sqrt(d2x_ds2.^2+d2y_ds2.^2);
+
+% % Dati Robot
+CGTF=1;
+CGTR=0.84; 
+Ts = 1/n;
+
+
+%% Calcolo path
+x_s= x;
+y_s= y;
+
+x_s_prime = dx_ds;
+y_s_prime = dy_ds;
+
+x_s_second = d2x_ds2;
+y_s_second = d2y_ds2;
+
+x_s_third = d3x_ds3;
+y_s_third = d3y_ds3;
+
+v_tilde = sqrt(x_s_prime.^2 + y_s_prime.^2);
+
+theta_s = atan2(y_s_prime./v_tilde,x_s_prime./v_tilde);
+theta_s_prime = (y_s_second.*x_s_prime-x_s_second.*y_s_prime)./(v_tilde.^2);
+
+phi_s = atan(l*(y_s_second.*x_s_prime-x_s_second.*y_s_prime)./(v_tilde.^3));
+
+w_tilde = (l*v_tilde.*((y_s_third.*x_s_prime-x_s_third.*y_s_prime)-3*(y_s_second.*x_s_prime-x_s_second.*y_s_prime).*(x_s_prime.*x_s_second+y_s_prime.*y_s_second)))./((v_tilde.^6)+(l^2)*(y_s_second.*x_s_prime-x_s_second.*y_s_prime).^2);
+
+%% Time law
+check=0;
+t0 = 0;
+tf = 4;
+K=1;
+while (~check)    
+    
+    a0 = s(:,1);
+    a1 = 0;
+    a2 = 3/(tf^2)*(s(:,n)-s(:,1));
+    a3 = -2/(tf^3)*(s(:,n)-s(:,1));
+
+    % % Define the boundary conditions for s(t)
+    % t0 = 0; % initial time
+    % t_end = tf; % end time
+    % s0 = s(:,1); % initial arc length
+    % s_end = s(:,n); % end arc length
+    % v0 = 0; % initial velocity
+    % v_end = 0; % end velocity
+    % a0 = 0; % initial acceleration
+    % a_end = 0; % end acceleration
+    % 
+    % % Set up the system of equations for quintic polynomial
+    % A = [
+    %     1, t0, t0^2, t0^3, t0^4, t0^5;
+    %     1, t_end, t_end^2, t_end^3, t_end^4, t_end^5;
+    %     0, 1, 2*t0, 3*t0^2, 4*t0^3, 5*t0^4;
+    %     0, 1, 2*t_end, 3*t_end^2, 4*t_end^3, 5*t_end^4;
+    %     0, 0, 2, 6*t0, 12*t0^2, 20*t0^3;
+    %     0, 0, 2, 6*t_end, 12*t_end^2, 20*t_end^3
+    % ];
+    % 
+    % b = [s0; s_end; v0; v_end; a0; a_end];
+    % 
+    % % Solve for the coefficients
+    % coefficients = A\b;
+    % 
+    % % Extract the coefficients
+    % a0 = coefficients(1);
+    % a1 = coefficients(2);
+    % a2 = coefficients(3);
+    % a3 = coefficients(4);
+    % a4 = coefficients(5);
+    % a5 = coefficients(6);
+
+    % Define the quintic polynomial function s(t)
+    % s_t = @(t) a0 + a1*t + a2*t^2 + a3*t^3 + a4*t^4 + a5*t^5;
+    s_t = @(t) a3*t^3 + a2*t^2 + a1*t + a0;
+
+    % Create x(t) and y(t)
+    x_t = @(t) interp1(s, x_s, s_t(t),'spline','extrap');
+    y_t = @(t) interp1(s, y_s, s_t(t),'spline','extrap');
+
+    t_values = linspace(0, tf, n);
+
+    x_values = arrayfun(@(t) x_t(t),t_values);
+    y_values = arrayfun(@(t) y_t(t),t_values);
+
+    s_t_dot = 3*a3*t_values.^2 + 2*a2*t_values + a1;
+    % s_t_dot = a1 + 2*a2*t_values + 3*a3*t_values.^2 + 4*a4*t_values.^3 + 5*a5*t_values.^4;
+
+    x_t_dot = x_s_prime.*s_t_dot;
+    y_t_dot = y_s_prime.*s_t_dot;
+    
+    v_t = v_tilde.*s_t_dot;
+    
+    w_t = w_tilde.*s_t_dot;
+   
+    theta_t = @(t) interp1(s, theta_s, s_t(t),'spline','extrap');
+    theta_values = arrayfun(@(t) theta_t(t),t_values);
+
+    theta_t_dot = theta_s_prime.*s_t_dot;
+
+    phi_t = @(t) interp1(s, phi_s, s_t(t),'spline','extrap');
+    phi_values = arrayfun(@(t) phi_t(t),t_values);
+
+    theta_t_dot_lim = tan(phi_lim)/l*vlim;
+
+    v_max = max(abs(v_t));
+    w_max = max(abs(w_t)); 
+    theta_max = max(abs(theta_t_dot));
+    phi_max = max(abs(phi_values));
+
+    check = 1; 
+
+    if ((v_max>vlim || w_max>wlim || theta_max>theta_t_dot_lim)) %&& phi_max<phi_lim )
+        Kmax = [v_max/vlim w_max/wlim theta_max/theta_t_dot_lim ];
+        K = max(Kmax); 
+        tf = tf*K;
+        check=0;  
+    end  
+
+end
+figure(1)
+plot(x_values,y_values)
+
+v_t_reference = timeseries(v_t,t_values);
+figure(2)
+plot(v_t_reference)
+
+
+w_t_reference = timeseries(w_t,t_values);
+figure(3)
+plot(w_t_reference)
+
+
+theta_t_reference = timeseries(theta_values,t_values);
+figure(4)
+plot(theta_t_reference);
+
+theta_t_dot_reference = timeseries(theta_t_dot,t_values);
+figure(5)
+plot(theta_t_dot_reference);
+
+phi_t_reference = timeseries(phi_values,t_values);
+figure(6)
+plot(phi_t_reference);
+
+x_t_reference = timeseries(x_values,t_values);
+figure(7)
+plot(x_t_reference);
+
+y_t_reference = timeseries(y_values,t_values);
+figure(8)
+plot(y_t_reference);
+
+
+x_dot_t_reference = timeseries(x_t_dot,t_values);
+figure
+
+plot(x_dot_t_reference);
+
+y_dot_t_reference = timeseries(y_t_dot,t_values);
+plot(y_dot_t_reference);

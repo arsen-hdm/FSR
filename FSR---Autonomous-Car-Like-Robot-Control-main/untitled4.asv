@@ -1,0 +1,38 @@
+% Traiettoria desiderata (Nx2)
+trajectory = [xp; yp]';  % Supponi di avere già i punti
+
+% Parametri veicolo (Fiat 600 ad esempio)
+v_max = 36;                 % [m/s] Velocità massima
+a_lat_max = 3;              % [m/s^2] Accelerazione laterale massima
+delta_max = deg2rad(30);    % [rad] Angolo di sterzata massimo
+deltadot_max = deg2rad(60); % [rad/s] Velocità max di sterzata
+L = 2.2;                    % [m] Interasse
+
+% Calcolo curvatura (grezza)
+dx = gradient(trajectory(:,1));
+dy = gradient(trajectory(:,2));
+ddx = gradient(dx);
+ddy = gradient(dy);
+
+curvature = abs(dx .* ddy - dy .* ddx) ./ (dx.^2 + dy.^2).^(3/2);  % κ(s)
+curvature(isnan(curvature)) = 0;  % Rimuove eventuali NaN
+
+% Limite da accelerazione laterale
+v_lat_limit = sqrt(a_lat_max ./ max(curvature, 1e-6));  % Evita div/0
+
+% Limite da angolo di sterzata (≈ bicycle model)
+v_steer_limit = sqrt(abs(tan(delta_max) ./ max(curvature, 1e-6)) * L);
+
+% Limite totale
+v_des = min([v_max * ones(size(curvature)), v_lat_limit, v_steer_limit], [], 2);
+
+% Lisciatura (velocità continua, con acc. realistica)
+v_des_smooth = smoothdata(v_des, 'gaussian', 15);  % oppure filtra con savitzky-golay
+
+ds = vecnorm(diff(trajectory), 2, 2);   % Incrementi arc-length
+s = [0; cumsum(ds)];                   % Ascissa curvilinea
+t = zeros(size(s));
+for i = 2:length(s)
+    v_avg = (v_des_smooth(i) + v_des_smooth(i-1)) / 2;
+    t(i) = t(i-1) + ds(i-1)/v_avg;
+end
